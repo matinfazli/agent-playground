@@ -1,23 +1,23 @@
-name: Agent Smoke Test (No LLM)
+name: Agent (Smoke PR + Plan Comment)
 
 on:
   issues:
     types: [labeled]
 
 permissions:
-  contents: write        # create branch + commit
-  pull-requests: write   # open PR
-  issues: read
+  contents: write        # create branches/commits
+  pull-requests: write   # open PRs
+  issues: write          # comment on issues
 
 jobs:
-  agent-smoke-test:
-    # Only run when the correct label is added
+  smoke-pr:
+    name: Smoke PR (no LLM)
     if: github.event.label.name == 'agent:build'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     concurrency:
-      group: agent-${{ github.event.issue.number }}
+      group: agent-smoke-${{ github.event.issue.number }}
       cancel-in-progress: false
 
     steps:
@@ -31,10 +31,11 @@ jobs:
           git config user.name "agent-bot"
           git config user.email "agent-bot@users.noreply.github.com"
 
-      - name: Create agent branch
+      - name: Create unique agent branch
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
-          BRANCH_NAME="agent/issue-${ISSUE_NUMBER}"
+          RUN_ID=${{ github.run_id }}
+          BRANCH_NAME="agent/issue-${ISSUE_NUMBER}-${RUN_ID}"
 
           git checkout -b "$BRANCH_NAME"
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
@@ -45,7 +46,7 @@ jobs:
           echo "## Agent Smoke Test" >> README.md
           echo "" >> README.md
           echo "- Issue: #${{ github.event.issue.number }}" >> README.md
-          echo "- Timestamp: $(date -u)" >> README.md
+          echo "- Timestamp (UTC): $(date -u)" >> README.md
 
       - name: Commit changes
         run: |
@@ -56,12 +57,58 @@ jobs:
         run: |
           git push origin "$BRANCH_NAME"
 
+      - name: Render PR body (script)
+        run: node scripts/render-pr-body.mjs
+        env:
+          MODE: smoke
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          TRIGGER_LABEL: ${{ github.event.label.name }}
+          BRANCH_NAME: ${{ env.BRANCH_NAME }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+
       - name: Open pull request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # If you created AGENT_GH_TOKEN (PAT), it will use it; otherwise uses GITHUB_TOKEN
+          GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           gh pr create \
-            --title "Agent smoke test for issue #${{ github.event.issue.number }}" \
-            --body "This PR was created by the agent smoke test workflow.\n\n- No LLM was used\n- This validates label → runner → branch → PR\n\nIssue: #${{ github.event.issue.number }}" \
+            --title "Agent: smoke test for #${{ github.event.issue.number }}" \
+            --body-file pr_body.md \
             --head "$BRANCH_NAME" \
             --base main
+
+  plan-comment:
+    name: Plan Comment (no LLM placeholder)
+    if: github.event.label.name == 'agent:plan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    concurrency:
+      group: agent-plan-${{ github.event.issue.number }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Render plan comment (script)
+        run: node scripts/render-plan-comment.mjs
+        env:
+          MODE: plan
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          TRIGGER_LABEL: ${{ github.event.label.name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+
+      - name: Post issue comment
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file plan_comment.md
