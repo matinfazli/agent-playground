@@ -1,0 +1,67 @@
+name: Agent Smoke Test (No LLM)
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write        # create branch + commit
+  pull-requests: write   # open PR
+  issues: read
+
+jobs:
+  agent-smoke-test:
+    # Only run when the correct label is added
+    if: github.event.label.name == 'agent:build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    concurrency:
+      group: agent-${{ github.event.issue.number }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up git identity
+        run: |
+          git config user.name "agent-bot"
+          git config user.email "agent-bot@users.noreply.github.com"
+
+      - name: Create agent branch
+        run: |
+          ISSUE_NUMBER=${{ github.event.issue.number }}
+          BRANCH_NAME="agent/issue-${ISSUE_NUMBER}"
+
+          git checkout -b "$BRANCH_NAME"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Smoke test edit (no LLM)
+        run: |
+          echo "" >> README.md
+          echo "## Agent Smoke Test" >> README.md
+          echo "" >> README.md
+          echo "- Issue: #${{ github.event.issue.number }}" >> README.md
+          echo "- Timestamp: $(date -u)" >> README.md
+
+      - name: Commit changes
+        run: |
+          git add README.md
+          git commit -m "chore(agent): smoke test edit for issue #${{ github.event.issue.number }}"
+
+      - name: Push branch
+        run: |
+          git push origin "$BRANCH_NAME"
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "Agent smoke test for issue #${{ github.event.issue.number }}" \
+            --body "This PR was created by the agent smoke test workflow.\n\n- No LLM was used\n- This validates label → runner → branch → PR\n\nIssue: #${{ github.event.issue.number }}" \
+            --head "$BRANCH_NAME" \
+            --base main
