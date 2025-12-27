@@ -1,115 +1,194 @@
 name: Agent (Smoke PR + Plan Comment)
 
 on:
-  issues:
-    types: [labeled]
+    issues:
+        types: [labeled]
 
 permissions:
-  contents: write        # create branches/commits
-  pull-requests: write   # open PRs
-  issues: write          # comment on issues
+    contents: write # create branches/commits
+    pull-requests: write # open PRs
+    issues: write # comment on issues
 
 jobs:
-  smoke-pr:
-    name: Smoke PR (no LLM)
-    if: github.event.label.name == 'agent:build'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    smoke-pr:
+        name: Smoke PR (no LLM)
+        if: github.event.label.name == 'agent:build'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
 
-    concurrency:
-      group: agent-smoke-${{ github.event.issue.number }}
-      cancel-in-progress: false
+        concurrency:
+            group: agent-smoke-${{ github.event.issue.number }}
+            cancel-in-progress: false
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      - name: Set up git identity
-        run: |
-          git config user.name "agent-bot"
-          git config user.email "agent-bot@users.noreply.github.com"
+            - name: Set up git identity
+              run: |
+                  git config user.name "agent-bot"
+                  git config user.email "agent-bot@users.noreply.github.com"
 
-      - name: Create unique agent branch
-        run: |
-          ISSUE_NUMBER=${{ github.event.issue.number }}
-          RUN_ID=${{ github.run_id }}
-          BRANCH_NAME="agent/issue-${ISSUE_NUMBER}-${RUN_ID}"
+            - name: Create unique agent branch
+              run: |
+                  ISSUE_NUMBER=${{ github.event.issue.number }}
+                  RUN_ID=${{ github.run_id }}
+                  BRANCH_NAME="agent/issue-${ISSUE_NUMBER}-${RUN_ID}"
 
-          git checkout -b "$BRANCH_NAME"
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+                  git checkout -b "$BRANCH_NAME"
+                  echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
-      - name: Smoke test edit (no LLM)
-        run: |
-          echo "" >> README.md
-          echo "## Agent Smoke Test" >> README.md
-          echo "" >> README.md
-          echo "- Issue: #${{ github.event.issue.number }}" >> README.md
-          echo "- Timestamp (UTC): $(date -u)" >> README.md
+            - name: Smoke test edit (no LLM)
+              run: |
+                  echo "" >> README.md
+                  echo "## Agent Smoke Test" >> README.md
+                  echo "" >> README.md
+                  echo "- Issue: #${{ github.event.issue.number }}" >> README.md
+                  echo "- Timestamp (UTC): $(date -u)" >> README.md
 
-      - name: Commit changes
-        run: |
-          git add README.md
-          git commit -m "chore(agent): smoke test edit for issue #${{ github.event.issue.number }}"
+            - name: Commit changes
+              run: |
+                  git add README.md
+                  git commit -m "chore(agent): smoke test edit for issue #${{ github.event.issue.number }}"
 
-      - name: Push branch
-        run: |
-          git push origin "$BRANCH_NAME"
+            - name: Push branch
+              run: |
+                  git push origin "$BRANCH_NAME"
 
-      - name: Render PR body (script)
-        run: node scripts/render-pr-body.mjs
-        env:
-          MODE: smoke
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          TRIGGER_LABEL: ${{ github.event.label.name }}
-          BRANCH_NAME: ${{ env.BRANCH_NAME }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
+            - name: Render PR body (script)
+              run: node scripts/render-pr-body.mjs
+              env:
+                  MODE: smoke
+                  REPO: ${{ github.repository }}
+                  RUN_ID: ${{ github.run_id }}
+                  TRIGGER_LABEL: ${{ github.event.label.name }}
+                  BRANCH_NAME: ${{ env.BRANCH_NAME }}
+                  ISSUE_NUMBER: ${{ github.event.issue.number }}
+                  ISSUE_TITLE: ${{ github.event.issue.title }}
+                  ISSUE_BODY: ${{ github.event.issue.body }}
 
-      - name: Open pull request
-        env:
-          # If you created AGENT_GH_TOKEN (PAT), it will use it; otherwise uses GITHUB_TOKEN
-          GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr create \
-            --title "Agent: smoke test for #${{ github.event.issue.number }}" \
-            --body-file pr_body.md \
-            --head "$BRANCH_NAME" \
-            --base main
+            - name: Open pull request
+              env:
+                  # If you created AGENT_GH_TOKEN (PAT), it will use it; otherwise uses GITHUB_TOKEN
+                  GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              run: |
+                  gh pr create \
+                    --title "Agent: smoke test for #${{ github.event.issue.number }}" \
+                    --body-file pr_body.md \
+                    --head "$BRANCH_NAME" \
+                    --base main
 
-  plan-comment:
-    name: Plan Comment
-    if: github.event.label.name == 'agent:plan'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    plan-comment:
+        name: Plan Comment
+        if: github.event.label.name == 'agent:plan'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
 
-    concurrency:
-      group: agent-plan-${{ github.event.issue.number }}
-      cancel-in-progress: false
+        concurrency:
+            group: agent-plan-${{ github.event.issue.number }}
+            cancel-in-progress: false
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
 
-      - name: Render plan comment (script)
-        run: node scripts/render-plan-comment.mjs
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash-lite
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          TRIGGER_LABEL: ${{ github.event.label.name }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
+            - name: Render plan comment (script)
+              run: node scripts/render-plan-comment.mjs
+              env:
+                  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+                  GEMINI_MODEL: gemini-2.5-flash-lite
+                  REPO: ${{ github.repository }}
+                  RUN_ID: ${{ github.run_id }}
+                  TRIGGER_LABEL: ${{ github.event.label.name }}
+                  ISSUE_NUMBER: ${{ github.event.issue.number }}
+                  ISSUE_TITLE: ${{ github.event.issue.title }}
+                  ISSUE_BODY: ${{ github.event.issue.body }}
 
-      - name: Post issue comment
-        env:
-          GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file plan_comment.md
+            - name: Post issue comment
+              env:
+                  GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
+                  ISSUE_NUMBER: ${{ github.event.issue.number }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file plan_comment.md
+
+    build-small:
+        name: Build Small (LLM patch + build)
+        if: github.event.label.name == 'agent:build-small'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+
+        concurrency:
+            group: agent-build-small-${{ github.event.issue.number }}
+            cancel-in-progress: false
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Set up Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: npm
+
+            - name: Set up git identity
+              run: |
+                  git config user.name "agent-bot"
+                  git config user.email "agent-bot@users.noreply.github.com"
+
+            - name: Create unique agent branch
+              run: |
+                  ISSUE_NUMBER=${{ github.event.issue.number }}
+                  RUN_ID=${{ github.run_id }}
+                  BRANCH_NAME="agent/build-small-${ISSUE_NUMBER}-${RUN_ID}"
+
+                  git checkout -b "$BRANCH_NAME"
+                  echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+            - name: Run build-small agent (Gemini)
+              run: node scripts/agent-build-small.mjs
+              env:
+                  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+                  GEMINI_MODEL: gemini-1.5-flash-latest
+                  REPO: ${{ github.repository }}
+                  RUN_ID: ${{ github.run_id }}
+                  TRIGGER_LABEL: ${{ github.event.label.name }}
+                  BRANCH_NAME: ${{ env.BRANCH_NAME }}
+                  ISSUE_NUMBER: ${{ github.event.issue.number }}
+                  ISSUE_TITLE: ${{ github.event.issue.title }}
+                  ISSUE_BODY: ${{ github.event.issue.body }}
+
+            - name: Commit changes
+              run: |
+                  # Only commit repo changes (not the generated pr_body.md/agent_plan.md)
+                  rm -f pr_body.md agent_plan.md || true
+
+                  if git diff --quiet; then
+                  echo "No changes to commit."
+                  exit 1
+                  fi
+
+                  git add src README.md || true
+                  git commit -m "feat(agent): build-small for issue #${{ github.event.issue.number }}"
+
+            - name: Push branch
+              run: |
+                  git push origin "$BRANCH_NAME"
+
+            - name: Open pull request
+              env:
+                  GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              run: |
+                  # Recreate pr_body.md (it was removed before commit)
+                  node scripts/agent-build-small.mjs || true
+
+                  gh pr create \
+                  --title "Agent: build-small for #${{ github.event.issue.number }}" \
+                  --body-file pr_body.md \
+                  --head "$BRANCH_NAME" \
+                  --base main
