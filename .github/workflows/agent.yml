@@ -81,7 +81,7 @@ jobs:
             --base main
 
   plan-comment:
-    name: Plan Comment (no LLM placeholder)
+    name: Plan Comment
     if: github.event.label.name == 'agent:plan'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -97,7 +97,8 @@ jobs:
       - name: Render plan comment (script)
         run: node scripts/render-plan-comment.mjs
         env:
-          MODE: plan
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-1.5-flash
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           TRIGGER_LABEL: ${{ github.event.label.name }}
