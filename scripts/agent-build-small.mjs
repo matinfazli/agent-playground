@@ -3,87 +3,108 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 
 function env(name, fallback = "") {
-  return process.env[name] ?? fallback;
+    return process.env[name] ?? fallback;
 }
 
 function sh(cmd, opts = {}) {
-  return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts });
+    return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts });
 }
 
 function shLive(cmd, opts = {}) {
-  return execSync(cmd, { encoding: "utf8", stdio: "inherit", ...opts });
+    return execSync(cmd, { encoding: "utf8", stdio: "inherit", ...opts });
 }
 
 function readFileIfExists(p) {
-  try {
-    return fs.readFileSync(p, "utf8");
-  } catch {
-    return "";
-  }
+    try {
+        return fs.readFileSync(p, "utf8");
+    } catch {
+        return "";
+    }
 }
 
 function listTree(dir, maxDepth = 4, depth = 0) {
-  if (depth > maxDepth) return "";
-  let entries = [];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return "";
-  }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
+    if (depth > maxDepth) return "";
+    let entries = [];
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return "";
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
 
-  let out = "";
-  for (const e of entries) {
-    if (e.name === "node_modules" || e.name === ".git" || e.name === "dist") continue;
-    const rel = path.join(dir, e.name);
-    out += `${"  ".repeat(depth)}${e.isDirectory() ? "📁" : "📄"} ${rel}\n`;
-    if (e.isDirectory()) out += listTree(rel, maxDepth, depth + 1);
-  }
-  return out;
+    let out = "";
+    for (const e of entries) {
+        if (e.name === "node_modules" || e.name === ".git" || e.name === "dist") continue;
+        const rel = path.join(dir, e.name);
+        out += `${"  ".repeat(depth)}${e.isDirectory() ? "📁" : "📄"} ${rel}\n`;
+        if (e.isDirectory()) out += listTree(rel, maxDepth, depth + 1);
+    }
+    return out;
 }
 
 async function callGemini({ apiKey, model, prompt }) {
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const url =
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-  const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.2,
-      topP: 0.9,
-      maxOutputTokens: 1400,
-    },
-  };
+    const body = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+            temperature: 0.2,
+            topP: 0.9,
+            maxOutputTokens: 1400,
+        },
+    };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${text}`);
-  }
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Gemini API error ${res.status}: ${text}`);
+    }
 
-  const json = await res.json();
-  const parts = json?.candidates?.[0]?.content?.parts;
-  const out = Array.isArray(parts) ? parts.map((p) => p.text ?? "").join("") : "";
-  return out.trim();
+    const json = await res.json();
+    const parts = json?.candidates?.[0]?.content?.parts;
+    const out = Array.isArray(parts) ? parts.map((p) => p.text ?? "").join("") : "";
+    return out.trim();
 }
 
 function extractDiffBlock(text) {
-  // Look for ```diff ... ```
-  const m = text.match(/```diff\s*([\s\S]*?)```/i);
-  if (!m) return { diff: "", withoutDiff: text };
-  const diff = m[1].trim();
-  const withoutDiff = text.replace(m[0], "").trim();
-  return { diff, withoutDiff };
+    const lower = text.toLowerCase();
+
+    // 1) Normal case: closed fenced diff block
+    const normal = text.match(/```diff\s*([\s\S]*?)```/i);
+    if (normal) {
+        const diff = normal[1].trim();
+        const withoutDiff = text.replace(normal[0], "").trim();
+        return { diff, withoutDiff };
+    }
+
+    // 2) Truncated case: opened ```diff but never closed
+    const start = lower.indexOf("```diff");
+    if (start !== -1) {
+        const before = text.slice(0, start).trim();
+
+        // Everything after ```diff becomes the diff
+        const after = text.slice(start + "```diff".length);
+
+        // If the model accidentally includes another fence start, cut there
+        const nextFence = after.indexOf("```");
+        const diffRaw = (nextFence === -1 ? after : after.slice(0, nextFence)).trim();
+
+        return { diff: diffRaw, withoutDiff: before };
+    }
+
+    // 3) No diff at all
+    return { diff: "", withoutDiff: text };
 }
 
 function tail(text, lines = 120) {
-  const arr = text.split("\n");
-  return arr.slice(Math.max(0, arr.length - lines)).join("\n");
+    const arr = text.split("\n");
+    return arr.slice(Math.max(0, arr.length - lines)).join("\n");
 }
 
 // ---- main ----
@@ -100,12 +121,12 @@ const triggerLabel = env("TRIGGER_LABEL");
 const branchName = env("BRANCH_NAME");
 
 if (!apiKey) {
-  console.error("Missing GEMINI_API_KEY (add repo secret).");
-  process.exit(1);
+    console.error("Missing GEMINI_API_KEY (add repo secret).");
+    process.exit(1);
 }
 
 const issueBodySafe =
-  issueBody && issueBody.trim().length > 0 ? issueBody : "_(No issue description provided)_";
+    issueBody && issueBody.trim().length > 0 ? issueBody : "_(No issue description provided)_";
 
 const repoSummary = readFileIfExists(".agent/repo_summary.md");
 const conventions = readFileIfExists(".agent/conventions.md");
@@ -185,8 +206,8 @@ const response = await callGemini({ apiKey, model, prompt });
 // Extract plan text and diff patch
 const { diff, withoutDiff } = extractDiffBlock(response);
 if (!diff) {
-  console.error("Model did not return a ```diff block. Full response:\n", response);
-  process.exit(1);
+    console.error("Model did not return a ```diff block. Full response:\n", response);
+    process.exit(1);
 }
 
 // Save plan for debugging (NOT committed)
@@ -195,15 +216,15 @@ fs.writeFileSync("agent_plan.md", withoutDiff + "\n", "utf8");
 // Apply patch
 console.log("Applying patch via git apply ...");
 try {
-  execSync("git apply --whitespace=fix -", {
-    input: diff + "\n",
-    stdio: ["pipe", "inherit", "pipe"],
-    encoding: "utf8",
-  });
+    execSync("git apply --whitespace=fix -", {
+        input: diff + "\n",
+        stdio: ["pipe", "inherit", "pipe"],
+        encoding: "utf8",
+    });
 } catch (e) {
-  console.error("git apply failed.");
-  console.error("Patch was:\n", diff);
-  process.exit(1);
+    console.error("git apply failed.");
+    console.error("Patch was:\n", diff);
+    process.exit(1);
 }
 
 // Install + build
@@ -212,19 +233,19 @@ let buildLog = "";
 
 console.log("Installing dependencies (npm ci) ...");
 try {
-  shLive("npm ci");
+    shLive("npm ci");
 } catch (e) {
-  console.error("npm ci failed.");
-  process.exit(1);
+    console.error("npm ci failed.");
+    process.exit(1);
 }
 
 console.log("Running build (npm run build) ...");
 try {
-  buildLog = sh("npm run build");
-  buildOk = true;
+    buildLog = sh("npm run build");
+    buildOk = true;
 } catch (e) {
-  buildLog = (e?.stdout ?? "") + "\n" + (e?.stderr ?? "");
-  buildOk = false;
+    buildLog = (e?.stdout ?? "") + "\n" + (e?.stderr ?? "");
+    buildOk = false;
 }
 
 // Diff summary
@@ -289,8 +310,8 @@ ${buildLogTail}
 fs.writeFileSync("pr_body.md", prBody, "utf8");
 
 if (!buildOk) {
-  console.error("Build failed. PR body generated; stopping so CI is honest.");
-  process.exit(2); // fail the job; you'll see logs in Actions
+    console.error("Build failed. PR body generated; stopping so CI is honest.");
+    process.exit(2); // fail the job; you'll see logs in Actions
 }
 
 console.log("Agent build-small completed successfully.");
