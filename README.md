@@ -71,3 +71,8 @@ export default defineConfig([
   },
 ])
 ```
+
+## Agent Smoke Test
+
+- Issue: #1
+- Timestamp: Sat Dec 27 02:27:26 UTC 2025
