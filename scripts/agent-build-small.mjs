@@ -123,12 +123,19 @@ Hard constraints:
 - ONLY modify files under src/ (and optionally README.md if needed).
 - Do NOT modify .github/, .agent/, package.json, lockfiles, or configs.
 - Keep it SMALL: max ~200 lines changed total, max 1-3 files.
-- Output MUST include a unified diff in a \`\`\`diff block that can be applied with \`git apply\`.
-- If you are unsure, choose the smallest safe implementation.
+- Output MUST include a patch that \`git apply\` accepts.
+
+Patch format requirements (MANDATORY):
+- Use **git-style unified diff** including:
+  - a line starting with: diff --git a/... b/...
+  - --- a/...
+  - +++ b/...
+- Do NOT omit the "diff --git" header.
+- Do NOT include explanations inside the diff block.
 
 You MUST:
 - Provide a short Plan section
-- Provide a Patch section with unified diff
+- Provide a Patch section with a \`\`\`diff block containing ONLY the patch
 `.trim();
 
 const prompt = `
